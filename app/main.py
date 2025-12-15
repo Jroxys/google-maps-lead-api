@@ -55,50 +55,38 @@ def create_lead_job(
         raise HTTPException(status_code=402, detail="Insufficient credits")
 
     job_id = generate_job_id()
-    create_job(db, job_id, x_api_key)
+
+    create_job(db, job_id, x_api_key)  # commit içeriyor
 
     background_tasks.add_task(process_job, job_id, req)
 
     return JobStatus(job_id=job_id, status="processing")
 
 
-
 def process_job(job_id: str, req: LeadRequest):
-    db = SessionLocal()
-    job = db.query(Job).filter(Job.job_id == job_id).first()
+    print("🔥 process_job started:", job_id)
 
-    start_time = time.time()
+    db = SessionLocal()
 
     try:
+        job = db.query(Job).filter(Job.job_id == job_id).first()
+        print("✅ Job fetched:", job)
+
         search_text = f"{req.keyword} {req.location}"
+        print("🔍 Search text:", search_text)
+
         results = run_scraper(search_text, req.limit)
+        print("📊 Results count:", len(results))
 
-        duration = int(time.time() - start_time)
-        lead_count = len(results)
-
-        # Usage log HER DURUMDA
-        log_usage(
-            db=db,
-            api_key=job.api_key,
-            job_id=job_id,
-            keyword=req.keyword,
-            location=req.location,
-            lead_count=lead_count,
-            duration_seconds=duration
-        )
-
-        # 🔴 MINIMUM LEAD CHECK
-        if lead_count < MIN_LEAD_THRESHOLD:
-            fail_job(db, job_id, "Below minimum lead threshold")
-            refund_credit(db, job.api_key)
-            return
-
-        # ✅ SUCCESS
         complete_job(db, job_id, results)
 
+        if len(results) < MIN_LEAD_THRESHOLD:
+            refund_credit(db, job.api_key)
+
     except Exception as e:
+        print("❌ ERROR INSIDE process_job:", e)
         fail_job(db, job_id, str(e))
-        refund_credit(db, job.api_key)
+        refund_credit(db, job.api_key if job else None)
 
     finally:
         db.close()
