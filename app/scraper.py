@@ -1,146 +1,154 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver import ActionChains
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 from bs4 import BeautifulSoup
-from app.utils import get_random_proxy
+from playwright.sync_api import sync_playwright
 
+from app.utils import get_random_proxy
 from app.email_finder import extract_email_from_website
 
 
 def run_scraper(search_text: str, limit: int = 50):
-    proxy = get_random_proxy()
     results = []
+    proxy = get_random_proxy()
 
-    # -------- CHROME OPTIONS (HEADLESS YOK) --------
-    chromeOptions = Options()
-    chromeOptions.add_argument("--start-maximized")
-    if proxy:
-        chromeOptions.add_argument(f"--proxy-server={proxy}")
-        print(f"[INFO] Using proxy: {proxy}")
-    chromeOptions.add_argument("--no-sandbox")
-    chromeOptions.add_argument("--disable-dev-shm-usage")
-    chromeOptions.add_argument("--log-level=3")
+    print(f"[INFO] Using proxy: {proxy}")
 
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=chromeOptions
-    )
+    with sync_playwright() as p:
+        launch_args = {
+            "headless": True,
+            "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+        }
 
-    # -------- go_to_maps (AYNEN) --------
-    driver.get("https://www.google.com/maps")
-    accept_cookies_button = driver.find_element(
-        By.XPATH,
-        "//button//span[text()='Tümünü kabul et' or text()='Accept all']"
+        if proxy:
+            launch_args["proxy"] = {"server": proxy}
 
-    )
-    accept_cookies_button.click()
-    time.sleep(2)
-    searchBox = driver.find_element(By.ID, "searchboxinput")
-    searchBox.send_keys(search_text)
-    searchBox.send_keys(Keys.ENTER)
-    time.sleep(5)
+        browser = p.chromium.launch(**launch_args)
+        context = browser.new_context()
+        page = context.new_page()
 
-    # -------- scroll_and_load (AYNEN) --------
-    results_list = driver.find_element(
-        By.XPATH,
-        f"//div[@aria-label='{search_text} için sonuçlar']"
-    )
+        # -------- go_to_maps (AYNEN) --------
+        page.goto("https://www.google.com/maps", timeout=60000)
 
-    last_height = driver.execute_script(
-        "return arguments[0].scrollHeight",
-        results_list
-    )
+        # Accept cookies if exists
+        try:
+            page.locator(
+                "//button//span[text()='Tümünü kabul et' or text()='Accept all']"
+            ).click(timeout=5000)
+            time.sleep(2)
+        except:
+            pass
 
-    while True:
-        driver.execute_script(
-            "arguments[0].scrollTop = arguments[0].scrollHeight",
+        page.wait_for_selector("#searchboxinput", timeout=20000)
+        page.fill("#searchboxinput", search_text)
+        page.keyboard.press("Enter")
+        time.sleep(5)
+
+        # -------- scroll_and_load (AYNEN MANTIK) --------
+        try:
+            results_list = page.locator(
+                f"//div[@aria-label='{search_text} için sonuçlar']"
+            )
+            results_list.wait_for(timeout=20000)
+        except:
+            browser.close()
+            return []
+
+        last_height = page.evaluate(
+            "(el) => el.scrollHeight",
             results_list
         )
-        time.sleep(2.5)
-        new_height = driver.execute_script(
-            "return arguments[0].scrollHeight",
+
+        while True:
+            page.evaluate(
+                "(el) => el.scrollTo(0, el.scrollHeight)",
+                results_list
+            )
+            time.sleep(2.5)
+
+            new_height = page.evaluate(
+                "(el) => el.scrollHeight",
+                results_list
+            )
+
+            if new_height == last_height:
+                break
+
+            last_height = new_height
+
+        page.evaluate(
+            "(el) => el.scrollIntoView(true)",
             results_list
         )
-        if new_height == last_height:
-            break
-        last_height = new_height
 
-    driver.execute_script(
-        "arguments[0].scrollIntoView(true);",
-        results_list
-    )
+        # -------- HTML PARSE (AYNEN) --------
+        soup = BeautifulSoup(page.content(), "html.parser")
 
-    # -------- HTML PARSE --------
-    soup = BeautifulSoup(driver.page_source, "html.parser")
+        possible_classes = [
+            "Nv2PK tH5CWc THOPZb",
+            "Nv2PK THOPZb CpccDe",
+            "Nv2PK Q2HXcd THOPZb"
+        ]
 
-    possible_classes = [
-        "Nv2PK tH5CWc THOPZb",
-        "Nv2PK THOPZb CpccDe",
-        "Nv2PK Q2HXcd THOPZb"
-    ]
+        data_containers = None
+        for class_name in possible_classes:
+            data_containers = soup.find_all("div", class_=class_name)
+            if data_containers:
+                break
 
-    data_containers = None
-    for class_name in possible_classes:
-        data_containers = soup.find_all("div", class_=class_name)
-        if data_containers:
-            break
+        if not data_containers:
+            browser.close()
+            return []
 
-    if not data_containers:
-        driver.quit()
-        return []
+        # -------- scrape_data (AYNEN) --------
+        for container in data_containers[:limit]:
+            try:
+                name = container.find(
+                    "div", class_="qBF1Pd fontHeadlineSmall"
+                ).text
+            except:
+                name = "No name"
 
-    # -------- scrape_data (AYNEN) --------
-    for container in data_containers[:limit]:
-        name = container.find(
-            "div", class_="qBF1Pd fontHeadlineSmall"
-        ).text
+            try:
+                ratings = container.find("span", class_="MW4etd").text
+            except:
+                ratings = "Has No rating"
 
-        try:
-            ratings = container.find("span", class_="MW4etd").text
-        except:
-            ratings = "Has No rating"
+            try:
+                comments = container.find("span", class_="UY7F9").text
+            except:
+                comments = "Has No comments."
 
-        try:
-            comments = container.find("span", class_="UY7F9").text
-        except:
-            comments = "Has No comments."
+            try:
+                website = container.find(
+                    "a", {"class": "lcr4fd S9kvJb"}
+                ).get("href")
+            except:
+                website = "No Website"
 
-        try:
-            website = container.find(
-                "a", {"class": "lcr4fd S9kvJb"}
-            ).get("href")
-        except:
-            website = "No Website"
+            try:
+                phoneNumber = container.find(
+                    "span", class_="UsdlK"
+                ).text
+            except:
+                phoneNumber = "No phone number"
 
-        try:
-            phoneNumber = container.find(
-                "span", class_="UsdlK"
-            ).text
-        except:
-            phoneNumber = "No phone number"
+            if website != "No Website":
+                emails = extract_email_from_website(website)
+            else:
+                emails = ["No website to extract email"]
 
-        if website != "No Website":
-            emails = extract_email_from_website(website)
-        else:
-            emails = ["No website to extract email"]
-        if isinstance(emails, str):
-            emails = [emails]
-        elif emails is None:
-            emails = ["No email found"]
+            if isinstance(emails, str):
+                emails = [emails]
+            elif emails is None:
+                emails = ["No email found"]
 
-        results.append({
-            "name": name,
-            "ratings": ratings,
-            "comments": comments,
-            "website": website,
-            "phone": phoneNumber,
-            "emails": ", ".join(emails)
-        })
+            results.append({
+                "name": name,
+                "ratings": ratings,
+                "comments": comments,
+                "website": website,
+                "phone": phoneNumber,
+                "emails": ", ".join(emails)
+            })
 
-    driver.quit()
-    return results
+        browser.close()
+        return results
