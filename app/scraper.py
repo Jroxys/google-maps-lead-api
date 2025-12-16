@@ -75,10 +75,12 @@ def run_scraper(search_text: str, limit: int = 50):
 
         # ---------- RESULTS LIST ----------
         try:
-            results_list = driver.find_element(
-                By.XPATH,
-                f"//div[@aria-label='{search_text} için sonuçlar']"
+            results_list = WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//div[@role='feed']")
             )
+        )
+
             print("[INFO] Results list found.",flush=True)
         except:
             driver.quit()
