@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.service.auth import consume_credit, get_credits, refund_credit
 from app.service.jobs import create_job, complete_job, fail_job
-from app.db_models import Job
+from app.db_models import Job, Lead
 import time
 from app.service.usage import log_usage
 from app.config import MIN_LEAD_THRESHOLD
@@ -64,29 +64,35 @@ def create_lead_job(
 
 
 def process_job(job_id: str, req: LeadRequest):
-    print("🔥 process_job started:", job_id)
-
     db = SessionLocal()
+    job = db.query(Job).filter(Job.job_id == job_id).first()
 
     try:
-        job = db.query(Job).filter(Job.job_id == job_id).first()
-        print("✅ Job fetched:", job)
+        results = run_scraper(f"{req.keyword} {req.location}", req.limit)
 
-        search_text = f"{req.keyword} {req.location}"
-        print("🔍 Search text:", search_text)
+        if not results:
+            job.status = "completed"
+            db.commit()
+            return
 
-        results = run_scraper(search_text, req.limit)
-        print("📊 Results count:", len(results))
+        for r in results:
+            lead = Lead(
+                job_id=job_id,
+                name=r["name"],
+                website=r["website"],
+                phone=r["phone"],
+                emails=r["emails"],
+                ratings=r["ratings"]
+            )
+            db.add(lead)
 
-        complete_job(db, job_id, results)
-
-        if len(results) < MIN_LEAD_THRESHOLD:
-            refund_credit(db, job.api_key)
+        job.status = "completed"
+        db.commit()
 
     except Exception as e:
-        print("❌ ERROR INSIDE process_job:", e)
-        fail_job(db, job_id, str(e))
-        refund_credit(db, job.api_key if job else None)
+        job.status = "failed"
+        db.commit()
+        raise e
 
     finally:
         db.close()
@@ -101,19 +107,16 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
 
 @app.get("/leads/result/{job_id}")
 def job_result(job_id: str, db: Session = Depends(get_db)):
-    leads = get_job_leads(db, job_id)
+    leads = db.query(Lead).filter(Lead.job_id == job_id).all()
+
+    if not leads:
+        return {"total": 0, "leads": []}
+
     return {
         "total": len(leads),
-        "leads": [
-            {
-                "name": l.name,
-                "email": l.email,
-                "phone": l.phone,
-                "website": l.website,
-                "rating": l.rating
-            } for l in leads
-        ]
+        "leads": leads
     }
+
 
 @app.get("/leads/csv/{job_id}")
 def download_csv(job_id: str):
