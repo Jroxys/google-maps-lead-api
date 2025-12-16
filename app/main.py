@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, BackgroundTasks
 from app.database import SessionLocal
 from app.models import LeadRequest, JobStatus
@@ -79,12 +80,17 @@ def process_job(job_id: str, req: LeadRequest):
     for r in results:
         lead = Lead(
             job_id=job_id,
-            name=r["name"],
-            website=r["website"],
-            phone=r["phone"],
-            emails=r["emails"],
-            ratings=r["ratings"]
+            name=results.get("name"),
+            email=(
+                results.get("emails").split(",")[0].strip()
+                if results.get("emails") and results.get("emails") != "No email found"
+                else None
+            ),
+            phone=results.get("phone"),
+            website=results.get("website"),
+            rating=results.get("ratings")
         )
+
         db.add(lead)
 
     db.commit()

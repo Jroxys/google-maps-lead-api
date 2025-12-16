@@ -80,7 +80,6 @@ def run_scraper(search_text: str, limit: int = 50):
                 (By.XPATH, "//div[@role='feed']")
             )
         )
-
             print("[INFO] Results list found.",flush=True)
         except:
             driver.quit()
