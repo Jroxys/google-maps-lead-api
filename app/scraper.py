@@ -7,9 +7,15 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 from app.email_finder import extract_email_from_website
 from app.utils import get_random_proxy
+import sys
+sys.stdout.reconfigure(line_buffering=True)
+
 
 
 def run_scraper(search_text: str, limit: int = 50):
@@ -19,32 +25,29 @@ def run_scraper(search_text: str, limit: int = 50):
     print(f"[INFO] Using proxy: {proxy}")
 
     # ---------- CHROME OPTIONS ----------
-    chrome_options = Options()
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--log-level=3")
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chromeOptions = Options()
+    chromeOptions.add_argument("--headless=new")  # Docker için şart
+    chromeOptions.add_argument("--no-sandbox")
+    chromeOptions.add_argument("--disable-dev-shm-usage")
+    chromeOptions.add_argument("--disable-gpu")
+
 
 
     # Docker için (gerekirse açarız)
     # chrome_options.add_argument("--headless=new")
 
     if proxy:
-        chrome_options.add_argument(f"--proxy-server={proxy}")
+        chromeOptions.add_argument(f"--proxy-server={proxy}")
 
     driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=chrome_options
+        options=chromeOptions
     )
-
+    print("[INFO] Chrome WebDriver initialized.",flush=True)
     try:
         # ---------- GOOGLE MAPS ----------
-        driver.get("https://www.google.com/maps")
+        driver.get("https://www.google.com/maps?hl=tr")
         time.sleep(3)
-
+        print("[INFO] Google Maps loaded.",flush=True)
         # ---------- COOKIE ACCEPT ----------
         try:
             accept_button = driver.find_element(
@@ -53,14 +56,22 @@ def run_scraper(search_text: str, limit: int = 50):
             )
             accept_button.click()
             time.sleep(2)
+            print("[INFO] Cookies accepted.",flush=True)
         except:
+            print("[INFO] No cookie accept button found.",flush=True)
             pass
 
         # ---------- SEARCH ----------
-        search_box = driver.find_element(By.ID, "searchboxinput")
+        wait = WebDriverWait(driver, 30)
+        search_box = wait.until(
+            EC.presence_of_element_located((By.ID, "searchboxinput"))
+        )
+        print(f"[INFO] Searching for: {search_text}")
+        driver.save_screenshot("/app/debug.png")
         search_box.send_keys(search_text)
         search_box.send_keys(Keys.ENTER)
         time.sleep(5)
+
 
         # ---------- RESULTS LIST ----------
         try:
