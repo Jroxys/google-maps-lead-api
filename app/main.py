@@ -128,21 +128,31 @@ def job_result(job_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/leads/csv/{job_id}")
-def download_csv(job_id: str):
-    job = jobs.get(job_id)
-    if not job:
-        return {"error": "Job not found"}
+def download_csv(job_id: str, db: Session = Depends(get_db)):
 
-    if job["status"] != "completed":
-        return {"error": "Job not completed yet"}
+    job = db.query(Job).filter(Job.job_id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    leads = db.query(Lead).filter(Lead.job_id == job_id).all()
+    if not leads:
+        raise HTTPException(status_code=404, detail="No leads found for this job")
 
     output = io.StringIO()
-    writer = csv.DictWriter(
-        output,
-        fieldnames=job["results"][0].keys()
-    )
-    writer.writeheader()
-    writer.writerows(job["results"])
+    writer = csv.writer(output)
+
+    # HEADER
+    writer.writerow(["name", "email", "phone", "website", "rating"])
+
+    # ROWS
+    for lead in leads:
+        writer.writerow([
+            lead.name,
+            lead.email,
+            lead.phone,
+            lead.website,
+            lead.rating
+        ])
 
     output.seek(0)
 
@@ -153,6 +163,7 @@ def download_csv(job_id: str):
             "Content-Disposition": f"attachment; filename=leads_{job_id}.csv"
         }
     )
+
 @app.get("/credits")
 def credits(
     x_api_key: str = Header(...),
