@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.service.auth import consume_credit, get_credits, refund_credit
 from app.service.jobs import create_job, complete_job, fail_job
-from app.db_models import Job, Lead
+from app.db_models import Job, Lead,User
 import time
 from app.service.usage import log_usage
 from app.config import MIN_LEAD_THRESHOLD
@@ -183,3 +183,20 @@ def usage_logs(
         ]
     }
 
+@app.post("/admin/add-credits")
+def add_credits(
+    api_key: str,
+    amount: int,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.api_key == api_key).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.credits += amount
+    db.commit()
+
+    return {
+        "api_key": api_key,
+        "new_credits": user.credits
+    }
