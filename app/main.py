@@ -80,15 +80,15 @@ def process_job(job_id: str, req: LeadRequest):
     for r in results:
         lead = Lead(
             job_id=job_id,
-            name=results.get("name"),
+            name=r.get("name"),
             email=(
-                results.get("emails").split(",")[0].strip()
-                if results.get("emails") and results.get("emails") != "No email found"
+                r.get("emails").split(",")[0].strip()
+                if r.get("emails") and r.get("emails") != "No email found"
                 else None
             ),
-            phone=results.get("phone"),
-            website=results.get("website"),
-            rating=results.get("ratings")
+            phone=r.get("phone"),
+            website=r.get("website"),
+            rating=r.get("ratings")
         )
 
         db.add(lead)
