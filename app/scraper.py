@@ -79,6 +79,7 @@ def run_scraper(search_text: str, limit: int = 50):
                 By.XPATH,
                 f"//div[@aria-label='{search_text} için sonuçlar']"
             )
+            print("[INFO] Results list found.",flush=True)
         except:
             driver.quit()
             return []
@@ -88,6 +89,7 @@ def run_scraper(search_text: str, limit: int = 50):
             "return arguments[0].scrollHeight",
             results_list
         )
+        print("[INFO] Scrolling through results...",flush=True)
 
         while True:
             driver.execute_script(
