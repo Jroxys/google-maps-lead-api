@@ -64,38 +64,41 @@ def create_lead_job(
 
 
 def process_job(job_id: str, req: LeadRequest):
+    print("🔥 process_job job_id:", job_id)
+
     db = SessionLocal()
     job = db.query(Job).filter(Job.job_id == job_id).first()
 
-    try:
-        results = run_scraper(f"{req.keyword} {req.location}", req.limit)
+    print("🧠 Job from DB:", job)
 
-        if not results:
-            job.status = "completed"
-            db.commit()
-            return
+    results = run_scraper(f"{req.keyword} {req.location}", req.limit)
 
-        for r in results:
-            lead = Lead(
-                job_id=job_id,
-                name=r["name"],
-                website=r["website"],
-                phone=r["phone"],
-                emails=r["emails"],
-                ratings=r["ratings"]
-            )
-            db.add(lead)
+    print("📊 Scraper results count:", len(results))
+    print("📊 First result sample:", results[0] if results else None)
 
-        job.status = "completed"
-        db.commit()
+    for r in results:
+        lead = Lead(
+            job_id=job_id,
+            name=r["name"],
+            website=r["website"],
+            phone=r["phone"],
+            emails=r["emails"],
+            ratings=r["ratings"]
+        )
+        db.add(lead)
 
-    except Exception as e:
-        job.status = "failed"
-        db.commit()
-        raise e
+    db.commit()
 
-    finally:
-        db.close()
+    print("✅ Leads committed")
+
+    count = db.query(Lead).filter(Lead.job_id == job_id).count()
+    print("📦 Leads in DB for job:", count)
+
+    job.status = "completed"
+    db.commit()
+
+    db.close()
+
 
 @app.get("/leads/status/{job_id}")
 def job_status(job_id: str, db: Session = Depends(get_db)):
