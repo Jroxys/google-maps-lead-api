@@ -44,6 +44,11 @@ def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         content={"error": "Too many requests. Please wait before retrying."}
     )
 
+import os
+
+def admin_auth(x_admin_key: str = Header(...)):
+    if x_admin_key != os.getenv("ADMIN_API_KEY"):
+        raise HTTPException(status_code=403, detail="Admin access only")
 @app.post("/leads", response_model=JobStatus)
 @limiter.limit("1/minute")
 def create_lead_job(
@@ -176,7 +181,8 @@ def credits(
 def usage_logs(
     x_api_key: str = Header(...),
     db: Session = Depends(get_db),
-    limit: int = 20
+    limit: int = 20,
+    admin=Depends(admin_auth)
 ):
     logs = get_usage_logs(db, x_api_key, limit)
 
@@ -199,7 +205,8 @@ def usage_logs(
 def add_credits(
     api_key: str,
     amount: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin=Depends(admin_auth)
 ):
     user = db.query(User).filter(User.api_key == api_key).first()
     if not user:
@@ -216,7 +223,8 @@ def add_credits(
 @app.post("/admin/create-test-key")
 def create_test_key(
     credits: int = 5,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    admin=Depends(admin_auth)
 ):
     api_key = f"sk_test_{secrets.token_hex(8)}"
 
@@ -234,3 +242,5 @@ def create_test_key(
         "api_key": api_key,
         "credits": credits
     }
+
+
