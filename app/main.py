@@ -25,6 +25,7 @@ import time
 from app.service.usage import log_usage
 from app.config import MIN_LEAD_THRESHOLD
 from app.service.read import get_usage_logs
+import secrets
 
 
 
@@ -210,4 +211,26 @@ def add_credits(
     return {
         "api_key": api_key,
         "new_credits": user.credits
+    }
+
+@app.post("/admin/create-test-key")
+def create_test_key(
+    credits: int = 5,
+    db: Session = Depends(get_db)
+):
+    api_key = f"sk_test_{secrets.token_hex(8)}"
+
+    user = User(
+
+        api_key=api_key,
+        credits=credits
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "api_key": api_key,
+        "credits": credits
     }
